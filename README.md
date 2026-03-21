@@ -103,10 +103,3 @@ Error Handling
 Both Lambda functions log to CloudWatch. Missing fields return a 400 response.
 Failed lookups are logged and processing continues with available data.
 SQS retries failed messages automatically.
-
----
-
-Contact
-
-For Close CRM webhook registration contact Azmat or Ninad with the API Gateway
-endpoint URL listed above.
