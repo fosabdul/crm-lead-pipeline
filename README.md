@@ -14,7 +14,8 @@ Close CRM sends a webhook event to API Gateway, which triggers Lambda 1.
 Lambda 1 saves the raw lead data to S3 and places the lead ID in an SQS queue
 with a 10-minute delay. After the delay, Lambda 2 fetches the lead owner from
 a public S3 bucket, merges the data, saves the enriched result, and sends an
-email via AWS SES.
+email via AWS SES. Failed messages are routed to a Dead Letter Queue for safe
+retention and debugging.
 
 ---
 
@@ -26,6 +27,7 @@ S3            Stores raw events in source/ and enriched data in target/
 SQS           Holds the lead for 10 minutes before processing
 Lambda 2      Looks up owner, merges data, sends email
 SES           Delivers email notification to the sales team
+DLQ           Captures failed messages after 3 retries for safe retention
 
 ---
 
@@ -38,6 +40,7 @@ crm-lead-pipeline/
     lead_processor/
       lambda_function.py
   docs/
+    architecture.svg
   README.md
   .gitignore
 
@@ -47,9 +50,11 @@ Setup
 
 1. Create S3 bucket crm-lead-pipeline with folders: source/ and target/
 2. Create SQS queue crm-lead-delay-queue with 600-second delivery delay
-3. Create Lambda 1 crm-webhook-receiver using Python 3.12, triggered by API Gateway POST /crm
-4. Create Lambda 2 crm-lead-processor using Python 3.12, triggered by SQS
-5. Verify sender email in AWS SES before sending notifications
+3. Create SQS Dead Letter Queue crm-lead-delay-queue-dlq and link it to
+   crm-lead-delay-queue with maximum receives set to 3
+4. Create Lambda 1 crm-webhook-receiver using Python 3.12, triggered by API Gateway POST /crm
+5. Create Lambda 2 crm-lead-processor using Python 3.12, triggered by SQS
+6. Verify sender email in AWS SES before sending notifications
 
 API Gateway endpoint:
 https://s6rv4u911g.execute-api.us-east-1.amazonaws.com/deploy/crm
@@ -102,4 +107,5 @@ Error Handling
 
 Both Lambda functions log to CloudWatch. Missing fields return a 400 response.
 Failed lookups are logged and processing continues with available data.
-SQS retries failed messages automatically.
+SQS retries failed messages automatically up to 3 times before routing them
+to the Dead Letter Queue for safe retention and manual review.
