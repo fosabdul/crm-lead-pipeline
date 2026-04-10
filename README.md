@@ -10,21 +10,23 @@ an email notification to the sales team.
 
 Architecture
 
+![Architecture Diagram](docs/architecture3.png)
+
 Close CRM sends a webhook event to API Gateway, which triggers Lambda 1.
-Lambda 1 saves the raw lead data to S3 and places the lead ID in an SQS queue
-with a 10-minute delay. After the delay, Lambda 2 fetches the lead owner from
-a public S3 bucket, merges the data, saves the enriched result, and sends an
-email via AWS SES. Failed messages are routed to a Dead Letter Queue for safe
-retention and debugging.
+Lambda 1 validates and saves the raw lead data to S3 and places the lead ID
+in an SQS queue with a configurable delay. After the delay, Lambda 2 fetches
+the lead owner from a public S3 bucket, merges the data, saves the enriched
+result, and sends an email via AWS SES. Failed messages are routed to a Dead
+Letter Queue for safe retention and debugging.
 
 ---
 
 AWS Services
 
 API Gateway   Receives webhook events from Close CRM
-Lambda 1      Parses event, saves to S3, sends to SQS
+Lambda 1      Validates event, saves to S3, sends to SQS
 S3            Stores raw events in source/ and enriched data in target/
-SQS           Holds the lead for 10 minutes before processing
+SQS           Holds the lead for a configurable delay before processing
 Lambda 2      Looks up owner, merges data, sends email
 SES           Delivers email notification to the sales team
 DLQ           Captures failed messages after 3 retries for safe retention
@@ -40,7 +42,7 @@ crm-lead-pipeline/
     lead_processor/
       lambda_function.py
   docs/
-    architecture.svg
+    architecture3.png
   README.md
   .gitignore
 
@@ -49,12 +51,13 @@ crm-lead-pipeline/
 Setup
 
 1. Create S3 bucket crm-lead-pipeline with folders: source/ and target/
-2. Create SQS queue crm-lead-delay-queue with 600-second delivery delay
+2. Create SQS queue crm-lead-delay-queue with configurable delivery delay
 3. Create SQS Dead Letter Queue crm-lead-delay-queue-dlq and link it to
    crm-lead-delay-queue with maximum receives set to 3
 4. Create Lambda 1 crm-webhook-receiver using Python 3.12, triggered by API Gateway POST /crm
-5. Create Lambda 2 crm-lead-processor using Python 3.12, triggered by SQS
-6. Verify sender email in AWS SES before sending notifications
+5. Set Lambda 1 environment variable: DELAY_SECONDS (default: 600)
+6. Create Lambda 2 crm-lead-processor using Python 3.12, triggered by SQS
+7. Verify sender email in AWS SES before sending notifications
 
 API Gateway endpoint:
 https://s6rv4u911g.execute-api.us-east-1.amazonaws.com/deploy/crm
@@ -99,13 +102,14 @@ curl -X POST https://s6rv4u911g.execute-api.us-east-1.amazonaws.com/deploy/crm \
     }
   }'
 
-After 10 minutes check S3 target/ for the enriched file and Gmail for the alert.
+After the configured delay check S3 target/ for the enriched file and Gmail for the alert.
 
 ---
 
 Error Handling
 
-Both Lambda functions log to CloudWatch. Missing fields return a 400 response.
+Both Lambda functions log to CloudWatch. Missing or invalid fields return a
+400 response. Duplicate leads are detected and skipped automatically.
 Failed lookups are logged and processing continues with available data.
 SQS retries failed messages automatically up to 3 times before routing them
 to the Dead Letter Queue for safe retention and manual review.
